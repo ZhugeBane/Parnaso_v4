@@ -8,13 +8,12 @@ const getStorageItem = (key: string): string | null => {
   return null;
 };
 
-// Safely access env vars. 
-// We cast import.meta to any to avoid TS errors if vite-env.d.ts is missing or not picked up immediately.
-const env = (import.meta as any).env || {};
+// Force cast import.meta to unknown then to a shape with env to satisfy strict TS
+const metaEnv = (import.meta as unknown as { env: Record<string, string> }).env || {};
 
 // Try to get config from Env Vars first, then LocalStorage
-let supabaseUrl = env.VITE_SUPABASE_URL || getStorageItem('parnaso_supabase_url');
-let supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || getStorageItem('parnaso_supabase_key');
+let supabaseUrl = metaEnv.VITE_SUPABASE_URL || getStorageItem('parnaso_supabase_url');
+let supabaseAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY || getStorageItem('parnaso_supabase_key');
 
 // Validate if they look somewhat correct (basic check)
 const isConfiguredInternal = () => {
