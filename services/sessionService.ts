@@ -1,5 +1,4 @@
-
-import { WritingSession, INITIAL_SESSIONS, UserSettings, INITIAL_SETTINGS, Project } from '../types';
+import { WritingSession, UserSettings, INITIAL_SETTINGS, Project } from '../types';
 
 // We will set this ID when the app loads or user logs in
 let currentUserId = 'guest';
