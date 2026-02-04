@@ -1,0 +1,16 @@
+import { createClient } from '@supabase/supabase-js';
+
+// Safely access env vars using a fallback object.
+// We cast to any to avoid TypeScript errors where env is inferred as {} (empty object).
+const env = (import.meta.env || {}) as any;
+const supabaseUrl = env.VITE_SUPABASE_URL;
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+
+// Fallback para evitar crash se as variáveis não estiverem definidas (modo offline/dev)
+const isConfigured = supabaseUrl && supabaseAnonKey;
+
+export const supabase = isConfigured 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
+
+export const isSupabaseConfigured = () => !!supabase;
