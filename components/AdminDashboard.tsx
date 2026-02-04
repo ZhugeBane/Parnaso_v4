@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, WritingSession, Project, UserSettings } from '../types';
 import { getAllUsers, toggleUserBlock, deleteUser } from '../services/authService';
-import { getUserDataForAdmin, deleteUserData, getGlobalStats } from '../services/sessionService';
+import { getUserDataForAdmin, deleteUserData, getGlobalStats, getAllDataJSON, importDataJSON } from '../services/sessionService';
 import { Card } from './ui/Card';
 
 interface AdminDashboardProps {
@@ -14,9 +14,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit, onInspec
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({ totalWords: 0, totalSessions: 0 });
+  const [showBackup, setShowBackup] = useState(false);
 
   useEffect(() => {
     loadData();
+    // Listen for changes in other tabs or import actions
+    window.addEventListener('storage', loadData);
+    return () => window.removeEventListener('storage', loadData);
   }, []);
 
   const loadData = () => {
@@ -47,6 +51,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit, onInspec
     onInspectUser(targetUser, data);
   };
 
+  // --- Backup Functions ---
+  const handleDownloadBackup = () => {
+    const json = getAllDataJSON();
+    const blob = new Blob([json], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = `parnaso_backup_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleUploadBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const json = event.target?.result as string;
+      if (json) {
+        const success = importDataJSON(json);
+        if (success) {
+          alert('Dados importados com sucesso!');
+          loadData();
+          setShowBackup(false);
+        } else {
+          alert('Erro ao importar arquivo. Verifique se é um backup válido.');
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -65,19 +103,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit, onInspec
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Painel Administrativo</h1>
-            <p className="text-slate-500 text-sm">Controle Geral e Moderação</p>
+            <p className="text-slate-500 text-sm">Controle Geral e Moderação (Modo Local)</p>
           </div>
         </div>
-        <button 
-          onClick={onExit}
-          className="flex items-center px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-          </svg>
-          Voltar ao Meu Dashboard
-        </button>
+        <div className="flex gap-2">
+           <button 
+             onClick={() => setShowBackup(!showBackup)}
+             className="flex items-center px-4 py-2 text-teal-600 bg-white border border-teal-200 rounded-lg hover:bg-teal-50 transition-colors"
+           >
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+             </svg>
+             Backup / Sync
+           </button>
+           <button 
+             onClick={onExit}
+             className="flex items-center px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+           >
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+               <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+             </svg>
+             Voltar ao Meu Dashboard
+           </button>
+        </div>
       </div>
+
+      {/* Backup Modal/Panel */}
+      {showBackup && (
+         <div className="mb-8 p-6 bg-teal-50 border border-teal-200 rounded-2xl animate-fade-in">
+            <h3 className="font-bold text-teal-800 text-lg mb-2">Sincronização Manual (Sem Servidor)</h3>
+            <p className="text-teal-600 text-sm mb-4 max-w-2xl">
+              Como este aplicativo não possui banco de dados online, os dados ficam salvos apenas neste navegador. 
+              Para ver dados de outros navegadores/computadores, exporte o backup lá e importe aqui.
+            </p>
+            <div className="flex gap-4">
+               <button 
+                 onClick={handleDownloadBackup}
+                 className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium flex items-center shadow-sm"
+               >
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                 </svg>
+                 Baixar Dados (JSON)
+               </button>
+               <label className="px-4 py-2 bg-white text-teal-600 border border-teal-300 rounded-lg hover:bg-teal-50 font-medium flex items-center cursor-pointer shadow-sm">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                 </svg>
+                 Carregar Dados...
+                 <input type="file" accept=".json" onChange={handleUploadBackup} className="hidden" />
+               </label>
+            </div>
+         </div>
+      )}
 
       {/* Global Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
