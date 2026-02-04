@@ -10,7 +10,7 @@ interface AdminDashboardProps {
   onInspectUser: (user: User, data: { sessions: WritingSession[], projects: Project[], settings: UserSettings }) => void;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onExit, onInspectUser }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit, onInspectUser }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({ totalWords: 0, totalSessions: 0 });
