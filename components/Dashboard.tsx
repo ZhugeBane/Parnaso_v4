@@ -520,7 +520,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, sessions, projects, 
                       dataKey="value"
                       stroke="none"
                     >
-                      {strategyUsage.map((entry, index) => (
+                      {strategyUsage.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={STAT_COLORS[index % STAT_COLORS.length]} />
                       ))}
                     </Pie>
