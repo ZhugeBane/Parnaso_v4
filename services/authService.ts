@@ -1,4 +1,5 @@
 import { User } from '../types';
+import { notifyStorageChange } from './sessionService';
 
 const USERS_KEY = 'parnaso_users';
 const CURRENT_USER_KEY = 'parnaso_current_user';
@@ -36,6 +37,7 @@ export const register = (name: string, email: string, password: string): User =>
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
   }
   
+  notifyStorageChange();
   return newUser;
 };
 
@@ -54,11 +56,13 @@ export const login = (email: string, password: string): User => {
   }
 
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+  notifyStorageChange();
   return user;
 };
 
 export const logout = () => {
   localStorage.removeItem(CURRENT_USER_KEY);
+  notifyStorageChange();
 };
 
 export const getCurrentUser = (): User | null => {
@@ -93,6 +97,7 @@ export const resetPassword = (email: string, newPassword: string) => {
 
   users[index].password = newPassword;
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  notifyStorageChange();
 };
 
 // --- Admin Functions ---
@@ -111,6 +116,7 @@ export const toggleUserBlock = (userId: string): User[] => {
     
     users[index].isBlocked = !users[index].isBlocked;
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    notifyStorageChange();
   }
   return users;
 };
@@ -119,5 +125,6 @@ export const deleteUser = (userId: string): User[] => {
   const users = getAllUsers();
   const newUsers = users.filter(u => u.id !== userId);
   localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+  notifyStorageChange();
   return newUsers;
 };
