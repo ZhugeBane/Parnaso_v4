@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Helper to safely access localStorage (prevents build crashes in non-browser envs)
@@ -8,12 +9,13 @@ const getStorageItem = (key: string): string | null => {
   return null;
 };
 
-// Force cast import.meta to unknown then to a shape with env to satisfy strict TS
-const metaEnv = (import.meta as unknown as { env: Record<string, string> }).env || {};
+// CRITICAL FIX: Cast import.meta to any to prevent TS2339 error during build
+// This tells TypeScript "trust me, this object exists"
+const env = (import.meta as any).env || {};
 
 // Try to get config from Env Vars first, then LocalStorage
-let supabaseUrl = metaEnv.VITE_SUPABASE_URL || getStorageItem('parnaso_supabase_url');
-let supabaseAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY || getStorageItem('parnaso_supabase_key');
+let supabaseUrl = env.VITE_SUPABASE_URL || getStorageItem('parnaso_supabase_url');
+let supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || getStorageItem('parnaso_supabase_key');
 
 // Validate if they look somewhat correct (basic check)
 const isConfiguredInternal = () => {
