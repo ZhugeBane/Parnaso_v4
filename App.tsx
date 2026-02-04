@@ -4,57 +4,71 @@ import { SessionForm } from './components/SessionForm';
 import { FocusMode } from './components/FocusMode';
 import { AuthPage } from './components/AuthPage';
 import { AdminDashboard } from './components/AdminDashboard';
-import { SocialHub } from './components/SocialHub';
 import { WritingSession, UserSettings, INITIAL_SETTINGS, Project, User } from './types';
-import { getSessions, saveSession, getSettings, saveSettings, getProjects, saveProject, clearAllData, setServiceUserId } from './services/sessionService';
+import { getSessions, saveSession, getSettings, saveSettings, getProjects, saveProject, clearAllData } from './services/sessionService';
 import { getCurrentUser, logout } from './services/authService';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<'dashboard' | 'form' | 'focus' | 'admin' | 'social'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'form' | 'focus' | 'admin'>('dashboard');
   const [sessions, setSessions] = useState<WritingSession[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [settings, setSettings] = useState<UserSettings>(INITIAL_SETTINGS);
-  const [isLoading, setIsLoading] = useState(true);
   
-  // Inspection State (Admin viewing another user)
-  const [inspectingUser, setInspectingUser] = useState<User | null>(null);
-  const [inspectingData, setInspectingData] = useState<{ sessions: WritingSession[], projects: Project[], settings: UserSettings } | null>(null);
-
-  // To hold data passed from Focus Mode to Form
+  // States to handle Async Loading
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  
   const [prefilledData, setPrefilledData] = useState<Partial<WritingSession>>({});
 
-  // Initialize App and Check for User
+  // 1. Check Auth on Mount
   useEffect(() => {
-    const currentUser = getCurrentUser();
-    if (currentUser) {
-      handleLoginSuccess(currentUser);
-    } else {
-      setIsLoading(false);
-    }
+    checkAuth();
   }, []);
 
-  const handleLoginSuccess = (loggedInUser: User) => {
-    setUser(loggedInUser);
-    
-    // Configure services to use this user's data
-    setServiceUserId(loggedInUser.id);
-    
-    // Load their data
-    setSessions(getSessions());
-    setSettings(getSettings());
-    setProjects(getProjects());
-    
-    setView('dashboard');
-    setIsLoading(false);
+  const checkAuth = async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        await loadUserData(currentUser.id);
+      }
+    } catch (error) {
+      console.error("Auth check failed", error);
+    } finally {
+      setIsLoadingAuth(false);
+    }
   };
 
-  const handleLogout = () => {
-    logout();
+  const loadUserData = async (userId: string) => {
+    setIsLoadingData(true);
+    try {
+      const [fetchedSessions, fetchedProjects, fetchedSettings] = await Promise.all([
+        getSessions(userId),
+        getProjects(userId),
+        getSettings(userId)
+      ]);
+      setSessions(fetchedSessions);
+      setProjects(fetchedProjects);
+      setSettings(fetchedSettings);
+    } catch (e) {
+      console.error("Failed to load user data", e);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleLoginSuccess = async (loggedInUser: User) => {
+    setUser(loggedInUser);
+    await loadUserData(loggedInUser.id);
+    setView('dashboard');
+  };
+
+  const handleLogout = async () => {
+    await logout();
     setUser(null);
-    setSessions([]); // Clear state for security
+    setSessions([]);
     setProjects([]);
-    setInspectingUser(null);
   };
 
   const handleNewSession = () => {
@@ -66,24 +80,34 @@ function App() {
     setView('focus');
   };
 
-  const handleSaveSession = (session: WritingSession) => {
-    const updated = saveSession(session);
-    setSessions(updated);
+  const handleSaveSession = async (session: WritingSession) => {
+    if (!user) return;
+    // Optimistic Update
+    setSessions(prev => [session, ...prev]);
     setView('dashboard');
+    // Actual Save
+    await saveSession(session, user.id);
+    // Reload to ensure sync/IDs
+    const freshSessions = await getSessions(user.id);
+    setSessions(freshSessions);
   };
 
-  const handleSaveProject = (project: Project) => {
-    const updatedProjects = saveProject(project);
-    setProjects(updatedProjects);
+  const handleSaveProject = async (project: Project) => {
+    if (!user) return;
+    await saveProject(project, user.id);
+    const freshProjects = await getProjects(user.id);
+    setProjects(freshProjects);
   };
 
-  const handleUpdateSettings = (newSettings: UserSettings) => {
-    saveSettings(newSettings);
+  const handleUpdateSettings = async (newSettings: UserSettings) => {
+    if (!user) return;
     setSettings(newSettings);
+    await saveSettings(newSettings, user.id);
   };
 
-  const handleClearData = () => {
-    clearAllData();
+  const handleClearData = async () => {
+    if (!user) return;
+    await clearAllData(user.id);
     setSessions([]);
     setProjects([]);
     setSettings(INITIAL_SETTINGS);
@@ -95,15 +119,13 @@ function App() {
 
   const handleFocusExit = (sessionData?: { startTime: string; endTime: string }) => {
     if (sessionData) {
-       // If exiting with data (timer finished/stopped manually for logging), go to form
        setPrefilledData({
          startTime: sessionData.startTime,
          endTime: sessionData.endTime,
-         wasMultitasking: false // Assume focus mode means single tasking
+         wasMultitasking: false
        });
        setView('form');
     } else {
-       // Just closing without logging
        setView('dashboard');
     }
   };
@@ -111,84 +133,38 @@ function App() {
   // Admin Logic
   const handleAdminPanel = () => {
     setView('admin');
-    setInspectingUser(null);
   };
 
-  const handleInspectUser = (targetUser: User, data: { sessions: WritingSession[], projects: Project[], settings: UserSettings }) => {
-    setInspectingUser(targetUser);
-    setInspectingData(data);
-    // Don't change view, we will conditionally render Dashboard with read-only props inside the Admin logic or main flow
-  };
-
-  const handleCloseInspection = () => {
-    setInspectingUser(null);
-    setInspectingData(null);
-    setView('admin');
-  };
-
-  // Social Logic
-  const handleSocialPanel = () => {
-    setView('social');
-  };
-
-  if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Carregando...</div>;
+  if (isLoadingAuth) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Conectando ao servidor...</div>;
   }
 
   if (!user) {
     return <AuthPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // --- Render Logic ---
-
-  // 1. Admin Mode - Inspection View
-  if (inspectingUser && inspectingData) {
-    return (
-      <div className="min-h-screen bg-slate-50 text-slate-800 font-sans border-8 border-amber-400">
-        <Dashboard 
-          user={inspectingUser}
-          sessions={inspectingData.sessions} 
-          projects={inspectingData.projects}
-          settings={inspectingData.settings}
-          onNewSession={() => {}} // Disabled
-          onFocusMode={() => {}} // Disabled
-          onUpdateSettings={() => {}} // Disabled
-          onAddProject={() => {}} // Disabled
-          onResetData={() => {}} // Disabled
-          onLogout={() => {}} // Disabled
-          readOnly={true}
-          onAdminPanel={handleCloseInspection} // Acts as "Back" button
-        />
-      </div>
-    );
-  }
-
-  // 2. Admin Mode - Dashboard List
+  // Admin Mode
   if (view === 'admin') {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
         <AdminDashboard 
           currentUser={user}
           onExit={() => setView('dashboard')}
-          onInspectUser={handleInspectUser}
+          onInspectUser={() => {}} // Disabled in Server Mode for simplicity (RLS policies limit viewing others data)
         />
       </div>
     );
   }
 
-  // 3. Social Mode
-  if (view === 'social') {
-    return (
-      <SocialHub 
-        currentUser={user}
-        onExit={() => setView('dashboard')}
-      />
-    );
-  }
-
-  // 4. Normal User Views
+  // Normal User Views
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
+      {isLoadingData && (
+        <div className="fixed top-0 left-0 w-full h-1 bg-slate-200 z-50">
+          <div className="h-full bg-teal-500 animate-pulse w-1/3"></div>
+        </div>
+      )}
+      
       {view === 'dashboard' && (
         <Dashboard 
           user={user}
@@ -202,7 +178,7 @@ function App() {
           onResetData={handleClearData}
           onLogout={handleLogout}
           onAdminPanel={handleAdminPanel}
-          onSocial={handleSocialPanel}
+          onSocial={() => alert("Recurso Social em manutenção durante migração de servidor.")}
         />
       )}
       
