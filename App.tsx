@@ -4,11 +4,11 @@ import { SessionForm } from './components/SessionForm';
 import { FocusMode } from './components/FocusMode';
 import { AuthPage } from './components/AuthPage';
 import { AdminDashboard } from './components/AdminDashboard';
-import { SetupPage } from './components/SetupPage'; // Import SetupPage
+import { SetupPage } from './components/SetupPage'; 
 import { WritingSession, UserSettings, INITIAL_SETTINGS, Project, User } from './types';
 import { getSessions, saveSession, getSettings, saveSettings, getProjects, saveProject, clearAllData } from './services/sessionService';
 import { getCurrentUser, logout } from './services/authService';
-import { isSupabaseConfigured, clearSupabaseConfig } from './lib/supabase'; // Import config helpers
+import { isSupabaseConfigured, clearSupabaseConfig } from './lib/supabase'; 
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -24,7 +24,10 @@ function App() {
   const [prefilledData, setPrefilledData] = useState<Partial<WritingSession>>({});
 
   // 0. Check Configuration
-  if (!isSupabaseConfigured()) {
+  // We check this before any hooks that might depend on it
+  const isConfigured = isSupabaseConfigured();
+  
+  if (!isConfigured) {
     return <SetupPage />;
   }
 
@@ -173,7 +176,7 @@ function App() {
         <AdminDashboard 
           currentUser={user}
           onExit={() => setView('dashboard')}
-          onInspectUser={() => {}} // Disabled in Server Mode for simplicity (RLS policies limit viewing others data)
+          onInspectUser={() => {}} 
         />
       </div>
     );
@@ -201,7 +204,7 @@ function App() {
           onResetData={handleClearData}
           onLogout={handleLogout}
           onAdminPanel={handleAdminPanel}
-          onSocial={() => alert("Recurso Social em manutenção durante migração de servidor.")}
+          onSocial={() => alert("Recurso Social em manutenção.")}
         />
       )}
       
