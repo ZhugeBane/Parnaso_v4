@@ -4,9 +4,11 @@ import { SessionForm } from './components/SessionForm';
 import { FocusMode } from './components/FocusMode';
 import { AuthPage } from './components/AuthPage';
 import { AdminDashboard } from './components/AdminDashboard';
+import { SetupPage } from './components/SetupPage'; // Import SetupPage
 import { WritingSession, UserSettings, INITIAL_SETTINGS, Project, User } from './types';
 import { getSessions, saveSession, getSettings, saveSettings, getProjects, saveProject, clearAllData } from './services/sessionService';
 import { getCurrentUser, logout } from './services/authService';
+import { isSupabaseConfigured, clearSupabaseConfig } from './lib/supabase'; // Import config helpers
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +22,11 @@ function App() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   
   const [prefilledData, setPrefilledData] = useState<Partial<WritingSession>>({});
+
+  // 0. Check Configuration
+  if (!isSupabaseConfigured()) {
+    return <SetupPage />;
+  }
 
   // 1. Check Auth on Mount
   useEffect(() => {
@@ -69,6 +76,12 @@ function App() {
     setUser(null);
     setSessions([]);
     setProjects([]);
+  };
+
+  const handleDisconnectServer = () => {
+    if(window.confirm("Deseja desconectar deste servidor Supabase?")) {
+      clearSupabaseConfig();
+    }
   };
 
   const handleNewSession = () => {
@@ -140,7 +153,17 @@ function App() {
   }
 
   if (!user) {
-    return <AuthPage onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <div className="relative">
+        <AuthPage onLoginSuccess={handleLoginSuccess} />
+        <button 
+          onClick={handleDisconnectServer}
+          className="fixed top-4 right-4 text-xs text-slate-400 hover:text-slate-600 underline z-50"
+        >
+          Alterar Servidor
+        </button>
+      </div>
+    );
   }
 
   // Admin Mode
