@@ -1,188 +1,138 @@
-import React, { useState } from 'react';
-import { register, login, resetPassword } from '../services/authService';
+
 import { User } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-interface AuthPageProps {
-  onLoginSuccess: (user: User) => void;
-}
+// --- MOCK LOCAL FALLBACK (Para não quebrar se não tiver configurado) ---
+const LOCAL_USERS_KEY = 'parnaso_users';
+const LOCAL_CURRENT_KEY = 'parnaso_current_user';
 
-type AuthMode = 'login' | 'register' | 'recovery';
+export const register = async (name: string, email: string, password: string): Promise<User> => {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase não configurado. Configure as variáveis de ambiente.");
+  }
 
-export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
-  const [mode, setMode] = useState<AuthMode>('login');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const resetForm = () => {
-    setName('');
-    setEmail('');
-    setPassword('');
-    setError('');
-    setSuccessMsg('');
-  };
-
-  const handleSwitchMode = (newMode: AuthMode) => {
-    setMode(newMode);
-    resetForm();
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccessMsg('');
-    setLoading(true);
-
-    try {
-      if (mode === 'login') {
-        const user = await login(email, password);
-        onLoginSuccess(user);
-      } 
-      else if (mode === 'register') {
-        if (!name) throw new Error("Nome é obrigatório.");
-        const user = await register(name, email, password);
-        // Supabase registration usually auto-confirms or sends email depending on settings.
-        // Assuming auto-confirm for simplicity in this demo config, or successful user return.
-        onLoginSuccess(user);
-      }
-      else if (mode === 'recovery') {
-        await resetPassword(email);
-        setSuccessMsg("Se o e-mail existir, um link de recuperação foi enviado.");
-        setMode('login');
-      }
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Ocorreu um erro de conexão.");
-    } finally {
-      setLoading(false);
+  // 1. Register in Supabase Auth
+  const { data, error } = await supabase!.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { name } // Passa o nome para o metadata
     }
+  });
+
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error("Erro ao criar usuário.");
+
+  // O Trigger do SQL cria o perfil automaticamente na tabela 'profiles'
+
+  return {
+    id: data.user.id,
+    name,
+    email,
+    role: 'user', // Default
+    isBlocked: false
   };
+};
 
-  const getTitle = () => {
-    if (mode === 'login') return "Login";
-    if (mode === 'register') return "Criar Conta";
-    if (mode === 'recovery') return "Recuperar Senha";
-    return "";
+export const login = async (email: string, password: string): Promise<User> => {
+  if (!isSupabaseConfigured()) {
+     throw new Error("Conexão com servidor não configurada.");
+  }
+
+  const { data, error } = await supabase!.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (error) throw new Error("E-mail ou senha inválidos.");
+  
+  // Fetch profile details
+  const { data: profile } = await supabase!
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user.id)
+    .single();
+
+  if (profile?.is_blocked) {
+    await supabase!.auth.signOut();
+    throw new Error("Conta bloqueada pelo administrador.");
+  }
+
+  return {
+    id: data.user.id,
+    name: profile?.name || 'Usuário',
+    email: data.user.email!,
+    role: (profile?.role as 'admin' | 'user') || 'user',
+    isBlocked: profile?.is_blocked || false
   };
+};
 
-  const getButtonText = () => {
-    if (loading) return "Processando...";
-    if (mode === 'login') return "Entrar";
-    if (mode === 'register') return "Cadastrar";
-    if (mode === 'recovery') return "Enviar Link";
-    return "";
+export const logout = async () => {
+  if (isSupabaseConfigured()) {
+    await supabase!.auth.signOut();
+  }
+  localStorage.removeItem(LOCAL_CURRENT_KEY);
+};
+
+export const getCurrentUser = async (): Promise<User | null> => {
+  if (!isSupabaseConfigured()) return null;
+
+  const { data: { session } } = await supabase!.auth.getSession();
+  if (!session) return null;
+
+  const { data: profile } = await supabase!
+    .from('profiles')
+    .select('*')
+    .eq('id', session.user.id)
+    .single();
+
+  return {
+    id: session.user.id,
+    name: profile?.name || session.user.user_metadata.name || 'Usuário',
+    email: session.user.email!,
+    role: (profile?.role as 'admin' | 'user') || 'user',
+    isBlocked: profile?.is_blocked
   };
+};
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 font-sans">
-      <div className="max-w-4xl w-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row min-h-[600px] animate-fade-in">
-        
-        {/* Left Side - Brand */}
-        <div className="md:w-1/2 bg-gradient-to-br from-slate-800 to-slate-900 p-8 md:p-12 flex flex-col justify-between text-white relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-64 h-64 bg-teal-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 -translate-x-1/2 -translate-y-1/2"></div>
-          <div className="absolute bottom-0 right-0 w-64 h-64 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 translate-x-1/2 translate-y-1/2"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-               <img src="logo.png" alt="Logo" className="w-12 h-12 object-contain" />
-               <span className="text-xl font-bold tracking-tight">Projeto Parnaso</span>
-            </div>
-            
-            <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-6">
-              {mode === 'login' ? "Bem-vindo de volta." : "Sua jornada começa aqui."}
-            </h1>
-            <p className="text-slate-300 text-lg leading-relaxed">
-              Servidor Cloud Ativo. Seus dados, em qualquer lugar.
-            </p>
-          </div>
-        </div>
+// --- Admin Functions (Async now) ---
 
-        {/* Right Side - Form */}
-        <div className="md:w-1/2 p-8 md:p-12 flex flex-col justify-center">
-          <div className="w-full max-w-sm mx-auto">
-            <h2 className="text-3xl font-bold text-slate-800 mb-2">{getTitle()}</h2>
+export const getAllUsers = async (): Promise<User[]> => {
+  if (!isSupabaseConfigured()) return [];
 
-            {successMsg && (
-              <div className="mb-6 p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl text-sm flex items-center animate-fade-in">
-                {successMsg}
-              </div>
-            )}
+  const { data } = await supabase!.from('profiles').select('*');
+  
+  return (data || []).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    email: p.email,
+    role: (p.role as 'admin' | 'user') || 'user',
+    isBlocked: p.is_blocked
+  }));
+};
 
-            {error && (
-              <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-sm flex items-center animate-fade-in">
-                {error}
-              </div>
-            )}
+export const toggleUserBlock = async (userId: string, currentStatus: boolean): Promise<void> => {
+  if (!isSupabaseConfigured()) return;
+  await supabase!.from('profiles').update({ is_blocked: !currentStatus }).eq('id', userId);
+};
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {mode === 'register' && (
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Nome</label>
-                  <input 
-                    type="text" 
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 outline-none"
-                    placeholder="Seu nome"
-                  />
-                </div>
-              )}
-              
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">E-mail</label>
-                <input 
-                  type="email" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 outline-none"
-                  placeholder="seu@email.com"
-                  required
-                />
-              </div>
+export const deleteUser = async (userId: string): Promise<void> => {
+   // Nota: Supabase não permite deletar usuário da Auth via Client por segurança,
+   // apenas via Service Role (Backend). Aqui vamos apenas marcar como bloqueado ou deletar dados.
+   // Para deletar de verdade, precisaria de uma Edge Function.
+   // Vamos deletar o perfil da tabela profiles.
+   if (!isSupabaseConfigured()) return;
+   await supabase!.from('profiles').delete().eq('id', userId);
+};
 
-              {mode !== 'recovery' && (
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                     <label className="text-sm font-medium text-slate-700">Senha</label>
-                     {mode === 'login' && (
-                       <button type="button" onClick={() => handleSwitchMode('recovery')} className="text-xs font-semibold text-teal-600 hover:underline">Esqueci a senha</button>
-                     )}
-                  </div>
-                  <input 
-                    type="password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 outline-none"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-              )}
+export const checkUserExists = async (email: string): Promise<boolean> => {
+  // Client side cannot check if email exists easily without attempting login/signup logic in Supabase
+  // We skip this for now or try a dummy recover
+  return true; 
+};
 
-              <button 
-                type="submit" 
-                disabled={loading}
-                className={`w-full py-4 rounded-xl text-white font-bold shadow-lg shadow-teal-100 transition-all transform active:scale-95 mt-4 ${
-                  loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-teal-500 hover:bg-teal-600'
-                }`}
-              >
-                {getButtonText()}
-              </button>
-            </form>
-
-            <div className="mt-8 text-center text-sm text-slate-500">
-              {mode === 'login' ? (
-                <>Não tem conta? <button onClick={() => handleSwitchMode('register')} className="ml-2 font-bold text-teal-600 hover:underline">Cadastre-se</button></>
-              ) : (
-                <><button onClick={() => handleSwitchMode('login')} className="font-bold text-teal-600 hover:underline">Voltar ao Login</button></>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+export const resetPassword = async (email: string) => {
+  if (isSupabaseConfigured()) {
+    await supabase!.auth.resetPasswordForEmail(email);
+  }
 };
