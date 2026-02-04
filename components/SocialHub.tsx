@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Message, Group, ForumThread, ForumReply, Competition } from '../types';
+import { User, Message, Group, ForumThread, ForumReply, Competition, WritingSession } from '../types';
 import { 
   getFriendsList, 
   getPendingRequests, 
@@ -23,7 +24,7 @@ import {
   createCompetition,
   joinCompetition
 } from '../services/socialService';
-import { getUserSessionsById } from '../services/sessionService';
+import { getSessions } from '../services/sessionService';
 import { getAllUsers } from '../services/authService';
 
 interface SocialHubProps {
@@ -59,6 +60,7 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
 
   // Competition Data
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [compStats, setCompStats] = useState<Record<string, Record<string, { current: number, percent: number }>>>({});
   const [showCreateComp, setShowCreateComp] = useState(false);
   const [newCompTitle, setNewCompTitle] = useState('');
   const [newCompDesc, setNewCompDesc] = useState('');
@@ -73,25 +75,63 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    refreshData();
-    const users = getAllUsers();
-    setAllUsers(users);
+    const init = async () => {
+       await refreshData();
+       const users = await getAllUsers();
+       setAllUsers(users);
+    };
+    init();
     
     // Simulate real-time by refreshing every 3 seconds
     const interval = setInterval(refreshChatIfActive, 3000);
     return () => clearInterval(interval);
   }, [selectedChat, selectedThread]);
 
-  const refreshData = () => {
-    setFriends(getFriendsList(currentUser.id));
-    setRequests(getPendingRequests(currentUser.id));
-    setAvailableUsers(getAvailableUsers(currentUser.id));
+  const refreshData = async () => {
+    setFriends(await getFriendsList(currentUser.id));
+    setRequests(await getPendingRequests(currentUser.id));
+    setAvailableUsers(await getAvailableUsers(currentUser.id));
     setGroups(getUserGroups(currentUser.id));
     setThreads(getForumThreads());
-    setCompetitions(getCompetitions());
+    
+    const comps = getCompetitions();
+    setCompetitions(comps);
+
+    // Calculate stats asynchronously
+    const newStats: Record<string, Record<string, { current: number, percent: number }>> = {};
+    for (const comp of comps) {
+        newStats[comp.id] = {};
+        for (const pid of comp.participants) {
+            const sessions = await getSessions(pid);
+            newStats[comp.id][pid] = calculateProgress(comp, sessions);
+        }
+    }
+    setCompStats(newStats);
   };
 
-  const refreshChatIfActive = () => {
+  const calculateProgress = (comp: Competition, sessions: WritingSession[]) => {
+    const start = new Date(comp.startDate).getTime();
+    const end = new Date(comp.endDate).getTime();
+    
+    const validSessions = sessions.filter(s => {
+      const sDate = new Date(s.date).getTime();
+      return sDate >= start && sDate <= end;
+    });
+
+    let current = 0;
+    if (comp.type === 'word_count') {
+      current = validSessions.reduce((acc, s) => acc + s.wordCount, 0);
+    } else {
+      // Days streak in period (simplified count of days)
+      const days = new Set(validSessions.map(s => new Date(s.date).toLocaleDateString()));
+      current = days.size;
+    }
+    
+    const percent = Math.min(100, Math.round((current / comp.target) * 100));
+    return { current, percent };
+  };
+
+  const refreshChatIfActive = async () => {
     if (selectedChat) {
        let convo: Message[] = [];
        if (selectedChat.type === 'direct') {
@@ -114,7 +154,7 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
       });
     }
     // Refresh others for background updates
-    setRequests(getPendingRequests(currentUser.id)); 
+    setRequests(await getPendingRequests(currentUser.id)); 
     setThreads(getForumThreads());
   };
 
@@ -151,24 +191,24 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
   }, [messages]);
 
   // --- Handlers: Friends ---
-  const handleSendRequest = (userId: string) => {
+  const handleSendRequest = async (userId: string) => {
     try {
       sendFriendRequest(currentUser.id, userId);
-      refreshData();
+      await refreshData();
       alert("Solicitação enviada!");
     } catch (e: any) {
       alert(e.message);
     }
   };
 
-  const handleAccept = (id: string) => {
+  const handleAccept = async (id: string) => {
     acceptFriendRequest(id);
-    refreshData();
+    await refreshData();
   };
 
-  const handleReject = (id: string) => {
+  const handleReject = async (id: string) => {
     removeFriendship(id);
-    refreshData();
+    await refreshData();
   };
 
   // --- Handlers: Chat ---
@@ -189,13 +229,13 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
   };
 
   // --- Handlers: Groups ---
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     if (!newGroupName || selectedGroupMembers.length === 0) return;
     createGroup(newGroupName, currentUser.id, selectedGroupMembers);
     setShowCreateGroup(false);
     setNewGroupName('');
     setSelectedGroupMembers([]);
-    refreshData();
+    await refreshData();
   };
 
   const toggleGroupMember = (userId: string) => {
@@ -205,13 +245,13 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
   };
 
   // --- Handlers: Forum ---
-  const handleCreateThread = () => {
+  const handleCreateThread = async () => {
     if (!newThreadTitle || !newThreadContent) return;
     createForumThread(currentUser.id, newThreadTitle, newThreadContent, newThreadCategory);
     setShowCreateThread(false);
     setNewThreadTitle('');
     setNewThreadContent('');
-    refreshData();
+    await refreshData();
   };
 
   const handleReplyThread = () => {
@@ -222,43 +262,18 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
   };
 
   // --- Handlers: Competitions ---
-  const handleCreateCompetition = () => {
+  const handleCreateCompetition = async () => {
     if (!newCompTitle || !newCompDesc) return;
     createCompetition(currentUser.id, newCompTitle, newCompDesc, newCompType, newCompTarget, newCompDuration);
     setShowCreateComp(false);
     setNewCompTitle('');
     setNewCompDesc('');
-    refreshData();
+    await refreshData();
   };
 
-  const handleJoinCompetition = (compId: string) => {
+  const handleJoinCompetition = async (compId: string) => {
     joinCompetition(compId, currentUser.id);
-    refreshData();
-  };
-
-  // Calculate Progress for Competition
-  const getCompProgress = (comp: Competition, userId: string) => {
-    const sessions = getUserSessionsById(userId);
-    const start = new Date(comp.startDate).getTime();
-    const end = new Date(comp.endDate).getTime();
-    
-    // Filter relevant sessions
-    const validSessions = sessions.filter(s => {
-      const sDate = new Date(s.date).getTime();
-      return sDate >= start && sDate <= end;
-    });
-
-    let current = 0;
-    if (comp.type === 'word_count') {
-      current = validSessions.reduce((acc, s) => acc + s.wordCount, 0);
-    } else {
-      // Days streak in period (simplified count of days)
-      const days = new Set(validSessions.map(s => new Date(s.date).toLocaleDateString()));
-      current = days.size;
-    }
-    
-    const percent = Math.min(100, Math.round((current / comp.target) * 100));
-    return { current, percent };
+    await refreshData();
   };
 
   // Helper to get User Name
@@ -394,7 +409,8 @@ export const SocialHub: React.FC<SocialHubProps> = ({ currentUser, onExit }) => 
                       {isParticipant ? (
                          <div className="space-y-2">
                             {comp.participants.map(pid => {
-                               const { current, percent } = getCompProgress(comp, pid);
+                               const stat = compStats[comp.id]?.[pid] || { current: 0, percent: 0 };
+                               const { current, percent } = stat;
                                return (
                                   <div key={pid} className="text-xs">
                                      <div className="flex justify-between mb-1">
