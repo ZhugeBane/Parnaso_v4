@@ -3,6 +3,11 @@ import { WritingSession, UserSettings, INITIAL_SETTINGS, Project } from '../type
 // We will set this ID when the app loads or user logs in
 let currentUserId = 'guest';
 
+// Helper to notify React components of changes
+export const notifyStorageChange = () => {
+  window.dispatchEvent(new Event('storage'));
+};
+
 export const setServiceUserId = (id: string) => {
   currentUserId = id;
 };
@@ -12,6 +17,37 @@ const getKeys = (userId: string = currentUserId) => ({
   SETTINGS_KEY: `parnaso_${userId}_settings`,
   PROJECTS_KEY: `parnaso_${userId}_projects`
 });
+
+// --- Backup & Restore System ---
+
+export const getAllDataJSON = (): string => {
+  const data: Record<string, string | null> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('parnaso_')) {
+      data[key] = localStorage.getItem(key);
+    }
+  }
+  return JSON.stringify(data, null, 2);
+};
+
+export const importDataJSON = (jsonString: string): boolean => {
+  try {
+    const data = JSON.parse(jsonString);
+    let count = 0;
+    Object.keys(data).forEach(key => {
+      if (key.startsWith('parnaso_')) {
+        localStorage.setItem(key, data[key]);
+        count++;
+      }
+    });
+    notifyStorageChange();
+    return count > 0;
+  } catch (e) {
+    console.error("Erro ao importar dados", e);
+    return false;
+  }
+};
 
 // --- Sessions ---
 export const getSessions = (): WritingSession[] => {
@@ -44,12 +80,14 @@ export const saveSession = (session: WritingSession): WritingSession[] => {
   const sessions = getSessions();
   const newSessions = [session, ...sessions];
   localStorage.setItem(STORAGE_KEY, JSON.stringify(newSessions));
+  notifyStorageChange();
   return newSessions;
 };
 
 export const clearSessions = () => {
   const { STORAGE_KEY } = getKeys();
   localStorage.removeItem(STORAGE_KEY);
+  notifyStorageChange();
 };
 
 // --- Settings ---
@@ -69,6 +107,7 @@ export const getSettings = (): UserSettings => {
 export const saveSettings = (settings: UserSettings): UserSettings => {
   const { SETTINGS_KEY } = getKeys();
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  notifyStorageChange();
   return settings;
 };
 
@@ -99,6 +138,7 @@ export const saveProject = (project: Project): Project[] => {
     newProjects = [...projects, project];
   }
   localStorage.setItem(PROJECTS_KEY, JSON.stringify(newProjects));
+  notifyStorageChange();
   return newProjects;
 };
 
@@ -108,6 +148,7 @@ export const clearAllData = () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
   localStorage.setItem(PROJECTS_KEY, JSON.stringify([]));
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(INITIAL_SETTINGS));
+  notifyStorageChange();
 };
 
 // --- Admin Specific Access ---
@@ -131,6 +172,7 @@ export const deleteUserData = (targetUserId: string) => {
   localStorage.removeItem(keys.STORAGE_KEY);
   localStorage.removeItem(keys.PROJECTS_KEY);
   localStorage.removeItem(keys.SETTINGS_KEY);
+  notifyStorageChange();
 };
 
 export const getGlobalStats = (userIds: string[]) => {
