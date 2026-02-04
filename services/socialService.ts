@@ -55,9 +55,9 @@ export const removeFriendship = (friendshipId: string) => {
   localStorage.setItem(FRIENDSHIPS_KEY, JSON.stringify(newFriendships));
 };
 
-export const getFriendsList = (userId: string): { user: User, friendshipId: string }[] => {
+export const getFriendsList = async (userId: string): Promise<{ user: User, friendshipId: string }[]> => {
   const friendships = getFriendships();
-  const allUsers = getAllUsers();
+  const allUsers = await getAllUsers();
   
   const accepted = friendships.filter(f => 
     f.status === 'accepted' && (f.requesterId === userId || f.receiverId === userId)
@@ -70,9 +70,9 @@ export const getFriendsList = (userId: string): { user: User, friendshipId: stri
   }).filter(Boolean) as { user: User, friendshipId: string }[];
 };
 
-export const getPendingRequests = (userId: string): { user: User, friendshipId: string, type: 'received' | 'sent' }[] => {
+export const getPendingRequests = async (userId: string): Promise<{ user: User, friendshipId: string, type: 'received' | 'sent' }[]> => {
   const friendships = getFriendships();
-  const allUsers = getAllUsers();
+  const allUsers = await getAllUsers();
 
   const pending = friendships.filter(f => f.status === 'pending' && (f.receiverId === userId || f.requesterId === userId));
 
@@ -89,8 +89,8 @@ export const getPendingRequests = (userId: string): { user: User, friendshipId: 
   }).filter(Boolean) as any;
 };
 
-export const getAvailableUsers = (currentUserId: string): User[] => {
-  const allUsers = getAllUsers();
+export const getAvailableUsers = async (currentUserId: string): Promise<User[]> => {
+  const allUsers = await getAllUsers();
   const friendships = getFriendships();
 
   // Filter out self, admins, blocked users, and existing friends/requests
